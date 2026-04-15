@@ -1,19 +1,21 @@
 import { config } from './config';
+import { Message } from './context';
 
-interface OllamaResponse {
-  response: string;
+interface OllamaChatResponse {
+  message: Message;
 }
 
-export async function askLLM(prompt: string): Promise<string> {
+export async function askLLM(history: Message[]): Promise<string> {
   let response: Response;
 
   try {
-    response = await fetch(`${config.ollamaUrl}/api/generate`, {
+    response = await fetch(`${config.ollamaUrl}/api/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         model: config.ollamaModel,
-        prompt,
+        // Strip internal-only fields (e.g. isHistory) before sending to Ollama
+        messages: history.map(({ role, content }) => ({ role, content })),
         stream: false,
       }),
     });
@@ -28,11 +30,11 @@ export async function askLLM(prompt: string): Promise<string> {
     throw new Error(`Ollama returned ${response.status}: ${body || response.statusText}`);
   }
 
-  const data = (await response.json()) as OllamaResponse;
+  const data = (await response.json()) as OllamaChatResponse;
 
-  if (!data.response) {
+  if (!data.message?.content) {
     throw new Error('Ollama returned an empty response');
   }
 
-  return data.response;
+  return data.message.content;
 }

@@ -22,6 +22,8 @@ src/
   llm.ts      — Ollama API client (native fetch, no SDK)
   bot.ts      — creates the Telegram bot with polling
   handler.ts  — wires incoming messages to the LLM and back
+  context.ts  — manages per-chat system prompt and conversation context
+  logger.ts   — lightweight structured logger
   index.ts    — entry point, graceful shutdown
 ```
 
@@ -76,3 +78,18 @@ src/
     > I need my telegram bot to pass the messages I send him to the local llm running on my machine then send back in chat the llm’s response. Ollama with qwen2.5:7b is already running on my machine. Telegram bot is created and TELEGRAM_API_TOKEN is added to .env file. I want you to create the bot logic using javascript/typescript. Each message I send to bot chat should be treated as individual message to llm (no memory). Telegram bot api should be used through POLLING (and not webhook). No database or any storage needed, just TG -> Bot -> LLM -> Bot -> TG. Let’s use as few dependencies as possible. The bot logic should handle any messages, errors (i.e. LLM is not available or something else went wrong), be able to handle one message after another. I already added some prerequisites details in README.md file, after you finish - add project description and “Steps to run”. The code should be split through small, maintainable files, with clean architecture.
 
 5.  **Testing:** Finally, I tested the bot by sending various messages and verified the responses. I also confirmed the error handling works by sending messages while Ollama was turned off and successfully receiving the designated error message.
+
+# Adding context
+
+The difference of having or not the "chat history" / context:
+![Context or not](.readme/context_or_not.png)
+
+We can see what is actually sending to LLM and how the messages are getting summarized:
+![Logs](.readme/logs.png)
+
+We can also manipulate the LLM responses by setting SYSTEM PROMPT:
+![System prompt setup](.readme/system_prompt.png)
+
+
+
+
