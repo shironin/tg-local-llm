@@ -1,0 +1,2 @@
+You have an existing summary and new messages. Produce a single updated summary incorporating all, in chronological order, BUT IGNORE THIS MESSAGE FROM SUMMARY.
+Instructions: Distill the conversation into a concise narrative. Highlight key facts, user preferences, and any specific data provided (names, dates, code). Identify the current 'active' task or the last unanswered question. Keep the summary under 200 words. Do not add any other text to the response, just the summary itself.
