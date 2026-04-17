@@ -5,23 +5,28 @@ interface OllamaChatResponse {
   message: Message;
 }
 
-export async function askLLM(history: Message[]): Promise<string> {
+const RETRY_DELAYS_MS = [3000, 8000];
+
+async function attemptLLM(history: Message[], timeoutMs: number): Promise<string> {
   let response: Response;
 
   try {
     response = await fetch(`${config.ollamaUrl}/api/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      signal: AbortSignal.timeout(timeoutMs),
       body: JSON.stringify({
         model: config.ollamaModel,
-        // Strip internal-only fields (e.g. isHistory) before sending to Ollama
         messages: history.map(({ role, content }) => ({ role, content })),
         stream: false,
       }),
     });
   } catch (err) {
+    const isTimeout = err instanceof Error && err.name === 'TimeoutError';
     throw new Error(
-      `Cannot reach Ollama at ${config.ollamaUrl}. Is it running?`
+      isTimeout
+        ? `Ollama timed out after ${timeoutMs / 1000}s (${config.ollamaUrl})`
+        : `Cannot reach Ollama at ${config.ollamaUrl}: ${err instanceof Error ? err.message : String(err)}`
     );
   }
 
@@ -37,4 +42,31 @@ export async function askLLM(history: Message[]): Promise<string> {
   }
 
   return data.message.content;
+}
+
+async function callLLM(history: Message[], timeoutMs: number): Promise<string> {
+  let lastError: Error = new Error('Unknown error');
+
+  for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt++) {
+    try {
+      return await attemptLLM(history, timeoutMs);
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err));
+      const delay = RETRY_DELAYS_MS[attempt];
+      if (delay !== undefined) {
+        console.warn(`[LLM] Attempt ${attempt + 1} failed: ${lastError.message}. Retrying in ${delay / 1000}s...`);
+        await new Promise((r) => setTimeout(r, delay));
+      }
+    }
+  }
+
+  throw lastError;
+}
+
+export function askLLM(history: Message[]): Promise<string> {
+  return callLLM(history, config.llmTimeoutMs);
+}
+
+export function askLLMShort(history: Message[]): Promise<string> {
+  return callLLM(history, config.llmSummarizeTimeoutMs);
 }

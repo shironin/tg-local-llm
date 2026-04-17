@@ -1,12 +1,19 @@
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import TelegramBot from 'node-telegram-bot-api';
-import { askLLM } from './llm';
+import { askLLM, askLLMShort } from './llm';
 import { addMessage, clearHistory, getHistory, getRows, Message, MessageRole, performRollingSummarize } from './context';
 import { config } from './config';
 import { logHistory, logSummary } from './logger';
+import { runAgent } from './agent';
 
-const SUMMARIZE_PROMPT = readFileSync(join(__dirname, '..', 'prompts', 'summarize.md'), 'utf8').trim();
+const SUMMARIZE_PROMPT = readFileSync(join(__dirname, '..', 'prompts', 'summarize-simplified.md'), 'utf8').trim();
+
+function buildSummarizeMessages(rows: { role: string; content: string }[], existingSummary?: string): Message[] {
+  const contextLines = rows.map((r) => `${r.role}: ${r.content}`).join('\n');
+  const prior = existingSummary ? `prior summary: ${existingSummary}\n` : '';
+  return [{ role: 'user', content: `task: ${SUMMARIZE_PROMPT}\n${prior}context:\n${contextLines}` }];
+}
 
 const TYPING_INTERVAL_MS = 4000;
 
@@ -21,13 +28,16 @@ async function summarizeIfNeeded(chatId: number): Promise<void> {
   const segmentA = messageRows.slice(0, messageRows.length - config.memShortTermSize);
   const segmentB = messageRows.slice(-config.memShortTermSize);
 
-  // Build summarization context: existing summary (if any) + segment A + prompt
-  const context: Message[] = [];
-  if (summaryRow) context.push({ role: 'system', content: summaryRow.content, isHistory: true });
-  context.push(...segmentA.map((r) => ({ role: r.role as MessageRole, content: r.content })));
-
-  logHistory(chatId, context, `Summarizing ${segmentA.length} messages`);
-  const newSummary = await askLLM([...context, { role: 'user', content: SUMMARIZE_PROMPT }]);
+  const messages = buildSummarizeMessages(segmentA, summaryRow?.content);
+  console.log(`[Summarize] chat ${chatId}: ${segmentA.length} messages → summarize`);
+  console.log(`[Summarize] payload:\n${messages[0].content}`);
+  let newSummary: string;
+  try {
+    newSummary = await askLLMShort(messages);
+  } catch (err) {
+    console.warn(`[Summarize] Skipped for chat ${chatId}: ${err instanceof Error ? err.message : err}`);
+    return;
+  }
   logSummary(chatId, newSummary);
 
   performRollingSummarize(chatId, segmentB, newSummary);
@@ -77,12 +87,16 @@ async function handleForceSummarize(bot: TelegramBot, chatId: number): Promise<v
 
   await bot.sendChatAction(chatId, 'typing');
 
-  const context: Message[] = [];
-  if (summaryRow) context.push({ role: 'system', content: summaryRow.content, isHistory: true });
-  context.push(...segmentA.map((r) => ({ role: r.role as MessageRole, content: r.content })));
-
-  logHistory(chatId, context, `Force-summarizing ${segmentA.length} messages`);
-  const newSummary = await askLLM([...context, { role: 'user', content: SUMMARIZE_PROMPT }]);
+  const messages = buildSummarizeMessages(segmentA, summaryRow?.content);
+  console.log(`[Summarize] force chat ${chatId}: ${segmentA.length} messages → summarize`);
+  console.log(`[Summarize] payload:\n${messages[0].content}`);
+  let newSummary: string;
+  try {
+    newSummary = await askLLMShort(messages);
+  } catch (err) {
+    await bot.sendMessage(chatId, `Summarization failed: ${err instanceof Error ? err.message : err}`);
+    return;
+  }
   logSummary(chatId, newSummary);
 
   performRollingSummarize(chatId, segmentB, newSummary);
@@ -129,13 +143,9 @@ export function registerHandlers(bot: TelegramBot): void {
       await summarizeIfNeeded(chatId);
 
       const history = getHistory(chatId);
-      logHistory(chatId, history, 'Sending to LLM');
+      logHistory(chatId, history, 'Running agent');
 
-      const messages = config.contextSystemPrompt
-        ? [{ role: 'system' as const, content: config.contextSystemPrompt }, ...history]
-        : history;
-
-      const reply = await askLLM(messages);
+      const reply = await runAgent(text, chatId);
 
       addMessage(chatId, 'assistant', reply);
       await summarizeIfNeeded(chatId);

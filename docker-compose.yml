@@ -1,13 +1,26 @@
 services:
+  searxng:
+    image: searxng/searxng:latest
+    environment:
+      SEARXNG_BASE_URL: http://searxng:8080
+      SEARXNG_SECRET_KEY: ${SEARXNG_SECRET_KEY}
+    volumes:
+      - ./docker/searxng:/etc/searxng:rw
+#    restart: unless-stopped
+
   bot:
     build:
       context: .
-      dockerfile: docker/Dockerfile
+      dockerfile: docker/bot/Dockerfile
     env_file: .env
     environment:
       DB_PATH: /data/chats_history
+      SEARXNG_URL: http://searxng:8080
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
       - ./data:/data
+      - ./llm_work_files:/llm_work_files
+    depends_on:
+      - searxng
 #    restart: unless-stopped
