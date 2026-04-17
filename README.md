@@ -8,6 +8,8 @@ You → Telegram → Agent loop (Thought → Action → Observation) → Telegra
                    Ollama          Tools (search, files, math...)
 ```
 
+![Agentic loop](.readme/agentic-loop.png)
+
 ## Prerequisites
 
 - [Ollama](https://ollama.com) running with a model: `ollama run qwen3.5:4b`
