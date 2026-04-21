@@ -7,7 +7,7 @@ import { config } from './config';
 import { logHistory, logSummary } from './logger';
 import { runAgent } from './agent';
 
-const SUMMARIZE_PROMPT = readFileSync(join(__dirname, '..', 'prompts', 'summarize-simplified.md'), 'utf8').trim();
+const SUMMARIZE_PROMPT = readFileSync(join(__dirname, '..', 'prompts', 'summarize.md'), 'utf8').trim();
 
 function buildSummarizeMessages(rows: { role: string; content: string }[], existingSummary?: string): Message[] {
   const contextLines = rows.map((r) => `${r.role}: ${r.content}`).join('\n');
@@ -145,13 +145,15 @@ export function registerHandlers(bot: TelegramBot): void {
       const history = getHistory(chatId);
       logHistory(chatId, history, 'Running agent');
 
+      const agentStart = Date.now();
       const reply = await runAgent(text, chatId);
+      const elapsed = ((Date.now() - agentStart) / 1000).toFixed(1);
 
       addMessage(chatId, 'assistant', reply);
       await summarizeIfNeeded(chatId);
 
       await bot.sendMessage(chatId, reply);
-      console.log(`[Handler] Reply sent to ${chatId}`);
+      console.log(`[Handler] Reply sent to ${chatId} (${elapsed}s)`);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'An unknown error occurred';
       console.error(`[Handler] Error for chat ${chatId}:`, message);

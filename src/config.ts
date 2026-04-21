@@ -12,6 +12,7 @@ export const config = {
   telegramToken: requireEnv('TELEGRAM_API_TOKEN'),
   ollamaUrl: process.env.OLLAMA_URL ?? 'http://localhost:11434',
   ollamaModel: process.env.OLLAMA_MODEL ?? 'qwen2.5:7b',
+  ollamaModelSummary: process.env.OLLAMA_MODEL_SUMMARY ?? process.env.OLLAMA_MODEL ?? 'qwen2.5:7b',
   searxngUrl: process.env.SEARXNG_URL ?? 'http://localhost:8080',
   memThreshold: parseInt(process.env.MEM_THRESHOLD ?? '15', 10),
   memShortTermSize: parseInt(process.env.MEM_SHORT_TERM_SIZE ?? '5', 10),

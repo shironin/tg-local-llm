@@ -7,7 +7,8 @@ interface OllamaChatResponse {
 
 const RETRY_DELAYS_MS = [3000, 8000];
 
-async function attemptLLM(history: Message[], timeoutMs: number): Promise<string> {
+async function attemptLLM(history: Message[], timeoutMs: number, model = config.ollamaModel, label = 'LLM'): Promise<string> {
+  console.log(`[${label}] Using model: ${model}`);
   let response: Response;
 
   try {
@@ -16,7 +17,7 @@ async function attemptLLM(history: Message[], timeoutMs: number): Promise<string
       headers: { 'Content-Type': 'application/json' },
       signal: AbortSignal.timeout(timeoutMs),
       body: JSON.stringify({
-        model: config.ollamaModel,
+        model,
         messages: history.map(({ role, content }) => ({ role, content })),
         stream: false,
       }),
@@ -44,12 +45,12 @@ async function attemptLLM(history: Message[], timeoutMs: number): Promise<string
   return data.message.content;
 }
 
-async function callLLM(history: Message[], timeoutMs: number): Promise<string> {
+async function callLLM(history: Message[], timeoutMs: number, model = config.ollamaModel, label = 'LLM'): Promise<string> {
   let lastError: Error = new Error('Unknown error');
 
   for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt++) {
     try {
-      return await attemptLLM(history, timeoutMs);
+      return await attemptLLM(history, timeoutMs, model, label);
     } catch (err) {
       lastError = err instanceof Error ? err : new Error(String(err));
       const delay = RETRY_DELAYS_MS[attempt];
@@ -63,10 +64,10 @@ async function callLLM(history: Message[], timeoutMs: number): Promise<string> {
   throw lastError;
 }
 
-export function askLLM(history: Message[]): Promise<string> {
-  return callLLM(history, config.llmTimeoutMs);
+export function askLLM(history: Message[], label = 'LLM'): Promise<string> {
+  return callLLM(history, config.llmTimeoutMs, config.ollamaModel, label);
 }
 
 export function askLLMShort(history: Message[]): Promise<string> {
-  return callLLM(history, config.llmSummarizeTimeoutMs);
+  return callLLM(history, config.llmSummarizeTimeoutMs, config.ollamaModelSummary, 'Summarize');
 }

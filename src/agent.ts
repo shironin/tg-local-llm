@@ -60,7 +60,7 @@ export async function runAgent(userMessage: string, chatId: number): Promise<str
   const agentMessages: Message[] = [{ role: 'system', content: systemPrompt }, ...history];
 
   for (let step = 0; step < config.agentMaxSteps; step++) {
-    let raw = await askLLM(agentMessages);
+    let raw = await askLLM(agentMessages, `Agent step ${step + 1}`);
 
     let parsed: AgentStep;
     try {
@@ -73,7 +73,7 @@ export async function runAgent(userMessage: string, chatId: number): Promise<str
         role: 'user',
         content: 'Fix your JSON format. Your last response was not valid JSON. Respond ONLY with a valid JSON object.',
       });
-      raw = await askLLM(agentMessages);
+      raw = await askLLM(agentMessages, `Agent step ${step + 1} retry`);
       try {
         parsed = parseResponse(raw);
       } catch (e) {
