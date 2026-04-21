@@ -1,5 +1,5 @@
-import { config } from './config';
-import { Message } from './context';
+import { config } from '../../config';
+import { Message } from '../history';
 
 interface OllamaChatResponse {
   message: Message;

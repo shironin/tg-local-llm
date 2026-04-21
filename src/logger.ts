@@ -1,4 +1,4 @@
-import { Message } from './context';
+import { Message } from './modules/history';
 
 const ROLE_COL  = 11; // width of the role column (incl. [H] tag)
 const CONTENT_COL = 72; // max content width before truncation
@@ -20,10 +20,10 @@ function estimateTokens(messages: Message[]): number {
   return Math.ceil(messages.reduce((sum, m) => sum + m.content.length, 0) / 4);
 }
 
-export function logHistory(chatId: number, history: Message[], label: string): void {
+export function logHistory(userId: number, history: Message[], label: string): void {
   const tokens = estimateTokens(history);
   const msgs = history.length;
-  console.log(`\n[Context] ${label} — chat ${chatId} (${msgs} message${msgs !== 1 ? 's' : ''}, ~${tokens} tokens)`);
+  console.log(`\n[Context] ${label} — user ${userId} (${msgs} message${msgs !== 1 ? 's' : ''}, ~${tokens} tokens)`);
   console.log(HEADER);
   console.log(DIVIDER);
 
@@ -36,9 +36,9 @@ export function logHistory(chatId: number, history: Message[], label: string): v
   console.log('');
 }
 
-export function logSummary(chatId: number, summary: string): void {
+export function logSummary(userId: number, summary: string): void {
   const lines = summary.split('\n').filter(Boolean);
-  console.log(`\n[Context] Summary produced for chat ${chatId}:`);
+  console.log(`\n[Context] Summary produced for user ${userId}:`);
   console.log(`${'─'.repeat(ROLE_COL + CONTENT_COL + 10)}`);
   lines.forEach((line) => console.log(`  ${line}`));
   console.log(`${'─'.repeat(ROLE_COL + CONTENT_COL + 10)}\n`);

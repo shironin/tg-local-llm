@@ -23,6 +23,12 @@ try {
 }
 
 db.exec(`
+  CREATE TABLE IF NOT EXISTS users (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    telegram_id INTEGER UNIQUE NOT NULL,
+    created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
   CREATE TABLE IF NOT EXISTS chat_history (
     id        INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id   INTEGER NOT NULL,

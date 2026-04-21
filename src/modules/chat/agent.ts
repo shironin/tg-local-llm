@@ -1,18 +1,17 @@
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import { askLLM } from './llm';
-import { getHistory } from './context';
-import { buildToolsDescription, getToolByName, getToolNames } from './tools/registry';
-import { config } from './config';
-import { Message } from './context';
+import { getHistory } from '../history';
+import { buildToolsDescription, getToolByName, getToolNames } from '../../tools/registry';
+import { config } from '../../config';
+import { Message } from '../history';
 
-const RAW_SYSTEM_PROMPT = readFileSync(join(__dirname, '..', 'prompts', 'system-prompt-simplified.md'), 'utf8').trim();
+const RAW_SYSTEM_PROMPT = readFileSync(join(__dirname, '..', '..', '..', 'prompts', 'system-prompt-simplified.md'), 'utf8').trim();
 
 function buildSystemPrompt(): string {
   return RAW_SYSTEM_PROMPT.replace('{{TOOLS_DESCRIPTION}}', buildToolsDescription());
 }
 
-// Strip optional markdown code fences that Qwen sometimes adds
 function stripCodeFences(raw: string): string {
   return raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
 }
@@ -52,11 +51,10 @@ function logFinalAnswer(step: number, answer: string): void {
   console.log(border);
 }
 
-export async function runAgent(userMessage: string, chatId: number): Promise<string> {
+export async function runAgent(userMessage: string, userId: number): Promise<string> {
   const systemPrompt = buildSystemPrompt();
-  const history = getHistory(chatId);
+  const history = getHistory(userId);
 
-  // Seed agent messages: system + conversation history (includes current user message)
   const agentMessages: Message[] = [{ role: 'system', content: systemPrompt }, ...history];
 
   for (let step = 0; step < config.agentMaxSteps; step++) {
@@ -66,7 +64,6 @@ export async function runAgent(userMessage: string, chatId: number): Promise<str
     try {
       parsed = parseResponse(raw);
     } catch {
-      // Ask LLM to fix its JSON
       console.warn('[Agent] Invalid JSON from LLM, requesting fix...');
       agentMessages.push({ role: 'assistant', content: raw });
       agentMessages.push({
@@ -89,14 +86,12 @@ export async function runAgent(userMessage: string, chatId: number): Promise<str
 
     const { thought, action, args } = parsed as ToolCall;
 
-    // LLM called final_answer as a tool instead of using the correct JSON format
     if (action === 'final_answer') {
       const answer = args['answer'] ?? args['final_answer'] ?? JSON.stringify(args);
       logFinalAnswer(step, answer);
       return answer;
     }
 
-    // LLM emitted {"action": null} — nudge it to use final_answer format
     if (!action || action === 'null') {
       agentMessages.push({ role: 'assistant', content: raw });
       agentMessages.push({
@@ -116,7 +111,6 @@ export async function runAgent(userMessage: string, chatId: number): Promise<str
 
     logStep(step, thought, action, args, observation);
 
-    // Feed the assistant turn and observation back into the loop
     agentMessages.push({ role: 'assistant', content: raw });
     agentMessages.push({ role: 'user', content: `Observation: ${observation}` });
   }

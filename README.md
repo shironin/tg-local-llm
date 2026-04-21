@@ -1,66 +1,105 @@
-# TG Local LLM — Experiment Notes
+# TG Local LLM — Architecture Evolution
 
-![](readme_image.png)
+## Overview
 
-## 1. Overview
-
-A Telegram bot running a tiered local LLM setup for agentic tasks.
-
-### Models Used
-
-| Role | Model | Purpose |
-|------|-------|---------|
-| Orchestrator (4B) | `qwen3.5:4b` | Main agent — tool calls, Thought-Action-Observation loop |
-| Heavyweight (20B) | `gpt-oss:20b` | Context summarization |
-| Nano (0.8B) | `qwen3.5:0.8b` | Planned lightweight intent classifier |
-
-### Tasks Tested
-
-- **Intent classification** — categorizing the task type (0.8B)
-- **History summarization** — compressing long conversations (20B)
-- **Tool use (Math / Web Search)** — running Thought-Action-Observation cycles (4B)
+A Telegram bot running a local LLM (via Ollama) with an agentic tool-use loop. This branch documents the evolution of the codebase from a flat single-layer structure into a modular monolith with an event-driven communication layer.
 
 ---
 
-## 2. Observations
+## Part 1 — Modular Monolith
 
-### Which model performs best where?
+The original code had all concerns mixed together: history access, LLM calls, summarization logic, and Telegram routing were all tangled in a single handler file with no clear boundaries.
 
-**`qwen3.5:4b`** is the ideal balance. It reliably follows JSON format and doesn't drift into unnecessary reasoning. **`gpt-oss:20b`** excels as a "writer" — it produces high-quality summaries quickly without losing meaning.
+### Module Structure
 
-### Where does the weak model break?
+```
+src/
+  index.ts              — startup: wires subscriptions, creates bot
+  bot.ts                — Telegram bot creation
+  handler.ts            — thin routing layer (Telegram I/O only)
+  db.ts                 — shared SQLite infrastructure
+  config.ts
+  logger.ts
+  events/               — in-memory event bus
+  modules/
+    users/              — user identity and persistence
+    history/            — conversation storage and retrieval
+    chat/               — LLM orchestration, agent loop, summarization
+  tools/                — agent tool implementations
+```
 
-On the classification task, `qwen3.5:0.8b` hit a **reasoning explosion**: despite its small size, it ran longer than any other model, generating an endless stream of text instead of a single word — causing timeouts and loss of intent.
+### Module Responsibilities
 
-### Where is the strong model overkill?
+**`users`** — maps a Telegram `chatId` to an internal `userId`. Handles first-seen user creation. No other module stores or looks up users directly.
 
-`gpt-oss:20b` was useless for tool calling. It consistently broke JSON format by adding polite phrases or explanations, which crashed the agent parser. For strict structural tasks, its "intelligence" hurts precision.
+**`history`** — owns all reads and writes to the `chat_history` table. Exposes a service interface: `addMessage`, `getHistory`, `getRows`, `clearHistory`, `performRollingSummarize`. Other modules never touch the DB directly for history.
 
----
+**`chat`** — orchestrates the full response cycle: saves the user message, runs the agentic loop (`runAgent`), triggers rolling summarization when the context grows too large, saves the assistant reply. Exposes a single entry point: `processMessage(userId, text)`.
 
-## 3. Improvements
+### Communication Rules
 
-### What was changed
-
-- For **0.8B**: introduced "caveman" instructions and a hard `max_tokens: 5` cap to stop runaway reasoning.
-- For **20B**: removed the tool-use system prompt entirely, leaving only the summarization task — this reduced hallucinations and improved speed.
-
-### What was dropped
-
-Intent classification via `qwen3.5:0.8b` was removed entirely. The reasoning explosion made it unreliable, and the added complexity wasn't worth it — the 4B model handles routing well enough on its own.
-
-### What actually worked
-
-**Tiered architecture** — separating responsibilities so 4B handles only logic and 20B handles only archiving — noticeably improved overall stability. Simplifying the output format for the weak model also helped: replacing JSON with plain labels like `[TASK]` eliminated parse errors.
-
----
-
-## 4. Conclusion
-
-Model size does not guarantee success in agentic scenarios. Small models tend to loop without hard constraints; large models are too "talkative" for strict interfaces.
-
-For agent loop control and tool calling, **`qwen3.5:4b`** is the best fit — it strikes the right balance between speed and strict JSON adherence, which is critical for automated systems.
+Modules communicate only through their public `index.ts` interface — never by importing internal files from another module. The `handler.ts` layer only imports from module index files and never touches `db.ts` or any module internals directly.
 
 ---
 
-![](.readme/2-models.png)
+## Part 2 — Event System
+
+Direct calls between modules were partially replaced with an in-memory event bus, removing coupling where the calling side doesn't need to wait for the result.
+
+### Events
+
+| Event | Published by | Payload |
+|---|---|---|
+| `UserCreated` | `users` module | `{ userId, telegramId }` |
+| `MessageReceived` | `chat` module | `{ userId, role, content }` |
+| `ResponseGenerated` | `chat` module | `{ userId, content }` |
+
+### Implementation
+
+Built on Node.js's built-in `EventEmitter`, wrapped in a typed `AppEventEmitter` class that enforces payload types per event name via `AppEventMap`. A singleton `eventBus` is exported from `src/events/`.
+
+Subscriptions are registered once at startup in `index.ts` before the bot starts polling, keeping the wiring visible in one place.
+
+### Design Note
+
+The `chat` module still calls `addMessage` directly before emitting `MessageReceived` — this is intentional. The agent reads history synchronously during its loop, so the user message must be persisted before `runAgent` is called. Events are used for broadcasting after the fact, not as a replacement for operations the current request depends on.
+
+---
+
+## Architecture Diagrams
+
+### Request Flow
+
+```
+Telegram
+   │
+   ▼
+handler.ts
+   ├── getOrCreateUser() ──────────────────► modules/users
+   ├── processMessage() ───────────────────► modules/chat
+   │                                              │
+   │                                              └── addMessage() ──► modules/history
+   │
+   ├── getHistory() ───────────────────────────────────────────────► modules/history
+   └── clearHistory() ─────────────────────────────────────────────► modules/history
+```
+
+### Event Flow
+
+```
+modules/users  ──── UserCreated ───────────────────────► eventBus
+modules/chat   ──── MessageReceived ───────────────────► eventBus
+modules/chat   ──── ResponseGenerated ─────────────────► eventBus
+                                                             │
+                                                             ▼
+                                                  history/subscriptions
+```
+
+### modules/chat internals
+
+```
+modules/chat
+   ├── llm.ts         (Ollama API calls with retry)
+   ├── agent.ts       (Thought-Action-Observation loop)
+   └── summarizer.ts  (rolling context compression)
+```

@@ -1,5 +1,8 @@
 import { createBot } from './bot';
 import { registerHandlers } from './handler';
+import { registerHistorySubscriptions } from './modules/history/subscriptions';
+
+registerHistorySubscriptions();
 
 const bot = createBot();
 registerHandlers(bot);
