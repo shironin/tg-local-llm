@@ -16,8 +16,8 @@ export const webSearchTool = {
   name: 'web_search',
   description: 'Web search. Returns title+url+snippet list.',
   args: { query: 'search query' },
-  async execute(args: Record<string, string>): Promise<string> {
-    const query = (args['query'] ?? '').trim();
+  async execute(args: Record<string, string> | string): Promise<string> {
+    const query = (typeof args === 'string' ? args : (args['query'] ?? '')).trim();
     if (!query) return 'Error: query is required';
 
     const url = `${config.searxngUrl}/search?q=${encodeURIComponent(query)}&format=json&language=en`;

@@ -19,7 +19,7 @@ function stripCodeFences(raw: string): string {
 interface ToolCall {
   thought: string;
   action: string;
-  args: Record<string, string>;
+  args: Record<string, string> | string;
 }
 
 interface FinalAnswer {
@@ -33,7 +33,7 @@ function parseResponse(raw: string): AgentStep {
   return JSON.parse(cleaned) as AgentStep;
 }
 
-function logStep(step: number, thought: string, action: string, args: Record<string, string>, observation: string): void {
+function logStep(step: number, thought: string, action: string, args: Record<string, string> | string, observation: string): void {
   const border = '─'.repeat(60);
   console.log(`\n[Agent] Step ${step + 1}`);
   console.log(border);
@@ -87,7 +87,7 @@ export async function runAgent(userMessage: string, userId: number): Promise<str
     const { thought, action, args } = parsed as ToolCall;
 
     if (action === 'final_answer') {
-      const answer = args['answer'] ?? args['final_answer'] ?? JSON.stringify(args);
+      const answer = typeof args === 'string' ? args : (args['answer'] ?? args['final_answer'] ?? JSON.stringify(args));
       logFinalAnswer(step, answer);
       return answer;
     }

@@ -1,5 +1,30 @@
 const MAX_CHARS = 3000;
 
+function getEnvUrls(): Set<string> {
+  const origins = new Set<string>();
+  for (const value of Object.values(process.env)) {
+    if (!value) continue;
+    try {
+      const parsed = new URL(value);
+      if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+        origins.add(parsed.origin);
+      }
+    } catch {
+      // not a URL, skip
+    }
+  }
+  return origins;
+}
+
+function isEnvUrl(url: string): boolean {
+  try {
+    const requested = new URL(url).origin;
+    return getEnvUrls().has(requested);
+  } catch {
+    return false;
+  }
+}
+
 function htmlToText(html: string): string {
   return html
     .replace(/<script[\s\S]*?<\/script>/gi, '')
@@ -23,6 +48,11 @@ export const fetchUrlTool = {
     const url = (args['url'] ?? '').trim();
     if (!url) return 'Error: url is required';
 
+    if (isEnvUrl(url)) {
+      console.warn(`[fetchUrl] Blocked request to env URL: ${url}`);
+      return 'Error: access to this URL is not allowed';
+    }
+
     console.log(`[fetchUrl] GET ${url}`);
 
     let response: Response;
@@ -44,10 +74,13 @@ export const fetchUrlTool = {
     if (!response.ok) return `Error: HTTP ${response.status} ${response.statusText}`;
 
     const contentType = response.headers.get('content-type') ?? '';
-    if (!contentType.includes('text')) return `Error: unsupported content type "${contentType}"`;
+    const isJson = contentType.includes('application/json');
+    const isText = contentType.includes('text');
+    if (!isJson && !isText) return `Error: unsupported content type "${contentType}"`;
 
-    const html = await response.text();
-    const text = htmlToText(html);
+    const body = await response.text();
+    if (isJson) return body.length > MAX_CHARS ? body.slice(0, MAX_CHARS) + '… [truncated]' : body;
+    const text = htmlToText(body);
     return text.length > MAX_CHARS ? text.slice(0, MAX_CHARS) + '… [truncated]' : text;
   },
 };

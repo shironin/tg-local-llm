@@ -8,15 +8,16 @@ import { writeFileTool } from './writeFile';
 import { readFileTool } from './readFile';
 import { editFileTool } from './editFile';
 import { createDirTool } from './createDir';
+import { bashExecTool } from './bashExec';
 
 export interface Tool {
   name: string;
   description: string;
   args: Record<string, string>;
-  execute(args: Record<string, string>): Promise<string> | string;
+  execute(args: Record<string, string> | string): Promise<string> | string;
 }
 
-const tools: Tool[] = [calculatorTool, fileInfoTool, listFilesTool, findFilesTool, readFileTool, writeFileTool, editFileTool, createDirTool, webSearchTool, fetchUrlTool];
+const tools: Tool[] = [calculatorTool, fileInfoTool, listFilesTool, findFilesTool, readFileTool, writeFileTool, editFileTool, createDirTool, webSearchTool, fetchUrlTool, bashExecTool];
 
 const toolMap = new Map<string, Tool>(tools.map((t) => [t.name, t]));
 
