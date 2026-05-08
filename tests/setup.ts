@@ -1,0 +1,9 @@
+process.env.TELEGRAM_API_TOKEN = 'test-token';
+process.env.OLLAMA_URL = 'http://localhost:11434';
+process.env.OLLAMA_MODEL = 'test-model';
+process.env.OLLAMA_MODEL_SUMMARY = 'summary-model';
+process.env.AGENT_MAX_STEPS = '3';
+process.env.LLM_TIMEOUT_MS = '5000';
+process.env.LLM_SUMMARIZE_TIMEOUT_MS = '3000';
+process.env.MEM_THRESHOLD = '15';
+process.env.MEM_SHORT_TERM_SIZE = '5';
