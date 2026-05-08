@@ -8,17 +8,10 @@ A Telegram bot running a local LLM (via Ollama) with an agentic tool-use loop. T
 
 ## Identified Issues
 
-![](.readme/issue1.png)
+![](.readme/unit-tests.png)
 
-![](.readme/issue2.png)
-
-![](.readme/issue3.png)
+![](.readme/pipeline.png)
 
 ## What Could Not Be Broken
 
-- **Database access**: LLM was unable to find the db file even if it's a simple sqlite file.
-
-## What Was Fixed
-
-- Added blacklisted URLs that are present in environment variables.
-- Added blacklisted commands for **bashExec** tool.
+To execute unit tests, run: `npm run test`
