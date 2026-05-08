@@ -6,7 +6,7 @@ A Telegram bot running a local LLM (via Ollama) with an agentic tool-use loop. T
 
 ---
 
-## Identified Issues
+## Changelog
 
 ![](.readme/unit-tests.png)
 

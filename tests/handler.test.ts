@@ -121,6 +121,7 @@ describe('normal message', () => {
   });
 
   it('sends error message when processMessage throws', async () => {
+    const errSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
     mockGetHistory.mockReturnValue([]);
     mockProcessMessage.mockRejectedValue(new Error('model crash'));
     await sendMessage('hello');
@@ -128,6 +129,7 @@ describe('normal message', () => {
       CHAT_ID,
       'Something went wrong:\nmodel crash'
     );
+    errSpy.mockRestore();
   });
 
   it('ignores messages with no text', async () => {
