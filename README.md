@@ -12,6 +12,6 @@ A Telegram bot running a local LLM (via Ollama) with an agentic tool-use loop. T
 
 ![](.readme/pipeline.png)
 
-## What Could Not Be Broken
+## Info
 
 To execute unit tests, run: `npm run test`
