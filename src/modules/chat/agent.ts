@@ -4,6 +4,7 @@ import { askLLM } from './llm';
 import { getHistory } from '../history';
 import { buildToolsDescription, getToolByName, getToolNames } from '../../tools/registry';
 import { config } from '../../config';
+import { logger } from '../../logger';
 import { Message } from '../history';
 
 const RAW_SYSTEM_PROMPT = readFileSync(join(__dirname, '..', '..', '..', 'prompts', 'system-prompt-simplified.md'), 'utf8').trim();
@@ -33,24 +34,6 @@ function parseResponse(raw: string): AgentStep {
   return JSON.parse(cleaned) as AgentStep;
 }
 
-function logStep(step: number, thought: string, action: string, args: Record<string, string> | string, observation: string): void {
-  const border = '─'.repeat(60);
-  console.log(`\n[Agent] Step ${step + 1}`);
-  console.log(border);
-  console.log(`Thought    : ${thought ?? '(none)'}`);
-  console.log(`Action     : ${action}(${JSON.stringify(args)})`);
-  console.log(`Observation: ${observation}`);
-  console.log(border);
-}
-
-function logFinalAnswer(step: number, answer: string): void {
-  const border = '─'.repeat(60);
-  console.log(`\n[Agent] Step ${step + 1} — Final Answer`);
-  console.log(border);
-  console.log(answer);
-  console.log(border);
-}
-
 export async function runAgent(userMessage: string, userId: number): Promise<string> {
   const systemPrompt = buildSystemPrompt();
   const history = getHistory(userId);
@@ -64,7 +47,7 @@ export async function runAgent(userMessage: string, userId: number): Promise<str
     try {
       parsed = parseResponse(raw);
     } catch {
-      console.warn('[Agent] Invalid JSON from LLM, requesting fix...');
+      logger.warn('Invalid JSON from LLM, requesting fix', { step: step + 1 });
       agentMessages.push({ role: 'assistant', content: raw });
       agentMessages.push({
         role: 'user',
@@ -74,13 +57,13 @@ export async function runAgent(userMessage: string, userId: number): Promise<str
       try {
         parsed = parseResponse(raw);
       } catch (e) {
-        console.error('[Agent] Still invalid JSON after retry:', e);
+        logger.error('Still invalid JSON after retry', { step: step + 1, error: e instanceof Error ? e.message : String(e) });
         return 'I had trouble formatting my response. Please try again.';
       }
     }
 
     if ('final_answer' in parsed) {
-      logFinalAnswer(step, parsed.final_answer);
+      logger.debug('Agent final answer', { step: step + 1, answer: parsed.final_answer.slice(0, 200) });
       return parsed.final_answer;
     }
 
@@ -88,7 +71,7 @@ export async function runAgent(userMessage: string, userId: number): Promise<str
 
     if (action === 'final_answer') {
       const answer = typeof args === 'string' ? args : (args['answer'] ?? args['final_answer'] ?? JSON.stringify(args));
-      logFinalAnswer(step, answer);
+      logger.debug('Agent final answer', { step: step + 1, answer: answer.slice(0, 200) });
       return answer;
     }
 
@@ -109,12 +92,18 @@ export async function runAgent(userMessage: string, userId: number): Promise<str
       observation = await tool.execute(args);
     }
 
-    logStep(step, thought, action, args, observation);
+    logger.debug('Agent step', {
+      step: step + 1,
+      thought: thought ?? '(none)',
+      action,
+      args: JSON.stringify(args),
+      observation: observation.slice(0, 300),
+    });
 
     agentMessages.push({ role: 'assistant', content: raw });
     agentMessages.push({ role: 'user', content: `Observation: ${observation}` });
   }
 
-  console.warn('[Agent] Max steps reached');
+  logger.warn('Agent max steps reached', { max_steps: config.agentMaxSteps });
   return "I've reached the maximum reasoning steps without a final answer. Please try rephrasing your question.";
 }

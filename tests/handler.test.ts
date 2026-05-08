@@ -1,3 +1,7 @@
+const mockLogger = { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() };
+const mockSetSentryContext = jest.fn();
+const mockCaptureException = jest.fn();
+
 jest.mock('node-telegram-bot-api');
 jest.mock('../src/modules/users', () => ({ getOrCreateUser: jest.fn() }));
 jest.mock('../src/modules/history', () => ({
@@ -8,7 +12,15 @@ jest.mock('../src/modules/chat', () => ({
   processMessage: jest.fn(),
   forceSummarize: jest.fn(),
 }));
-jest.mock('../src/logger', () => ({ logHistory: jest.fn() }));
+jest.mock('../src/logger', () => ({
+  logHistory: jest.fn(),
+  logger: mockLogger,
+  runWithTrace: jest.fn((_id: string, fn: () => unknown) => fn()),
+}));
+jest.mock('../src/sentry', () => ({
+  setSentryContext: mockSetSentryContext,
+  captureException: mockCaptureException,
+}));
 
 import { registerHandlers } from '../src/handler';
 import { getOrCreateUser } from '../src/modules/users';
@@ -121,7 +133,6 @@ describe('normal message', () => {
   });
 
   it('sends error message when processMessage throws', async () => {
-    const errSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
     mockGetHistory.mockReturnValue([]);
     mockProcessMessage.mockRejectedValue(new Error('model crash'));
     await sendMessage('hello');
@@ -129,7 +140,6 @@ describe('normal message', () => {
       CHAT_ID,
       'Something went wrong:\nmodel crash'
     );
-    errSpy.mockRestore();
   });
 
   it('ignores messages with no text', async () => {
@@ -140,10 +150,8 @@ describe('normal message', () => {
 });
 
 describe('polling_error', () => {
-  it('logs the error', () => {
-    const errSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+  it('logs the error via logger', () => {
     handlers['polling_error'](new Error('connection reset'));
-    expect(errSpy).toHaveBeenCalledWith('[Polling] Error:', 'connection reset');
-    errSpy.mockRestore();
+    expect(mockLogger.error).toHaveBeenCalledWith('Polling error', { error: 'connection reset' });
   });
 });

@@ -20,4 +20,5 @@ export const config = {
   llmTimeoutMs: parseInt(process.env.LLM_TIMEOUT_MS ?? String(5 * 60 * 1000), 10),
   llmSummarizeTimeoutMs: parseInt(process.env.LLM_SUMMARIZE_TIMEOUT_MS ?? String(2 * 60 * 1000), 10),
   agentWorkdir: process.env.AGENT_WORKDIR ?? '/',
+  sentryDsn: process.env.SENTRY_DSN,
 };

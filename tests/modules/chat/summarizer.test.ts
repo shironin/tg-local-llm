@@ -8,7 +8,10 @@ jest.mock('../../../src/modules/history', () => ({
   getRows: mockGetRows,
   performRollingSummarize: mockPerformRollingSummarize,
 }));
-jest.mock('../../../src/logger', () => ({ logSummary: mockLogSummary }));
+jest.mock('../../../src/logger', () => ({
+  logSummary: mockLogSummary,
+  logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
+}));
 
 import { summarizeIfNeeded, forceSummarize } from '../../../src/modules/chat/summarizer';
 
@@ -26,8 +29,6 @@ function makeRows(count: number) {
 
 beforeEach(() => {
   jest.clearAllMocks();
-  jest.spyOn(console, 'log').mockImplementation(() => {});
-  jest.spyOn(console, 'warn').mockImplementation(() => {});
 });
 
 afterEach(() => jest.restoreAllMocks());

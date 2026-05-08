@@ -2,7 +2,7 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 import { askLLMShort } from './llm';
 import { getRows, performRollingSummarize } from '../history';
-import { logSummary } from '../../logger';
+import { logSummary, logger } from '../../logger';
 import { config } from '../../config';
 import { Message } from '../history';
 
@@ -25,14 +25,14 @@ export async function summarizeIfNeeded(userId: number): Promise<void> {
   const segmentB = messageRows.slice(-config.memShortTermSize);
 
   const messages = buildSummarizeMessages(segmentA, summaryRow?.content);
-  console.log(`[Summarize] chat ${userId}: ${segmentA.length} messages → summarize`);
-  console.log(`[Summarize] payload:\n${messages[0].content}`);
+  logger.info('Summarizing messages', { user_id: userId, message_count: segmentA.length });
+  logger.debug('Summarize payload', { content: messages[0].content.slice(0, 500) });
 
   let newSummary: string;
   try {
     newSummary = await askLLMShort(messages);
   } catch (err) {
-    console.warn(`[Summarize] Skipped for chat ${userId}: ${err instanceof Error ? err.message : err}`);
+    logger.warn('Summarization skipped', { user_id: userId, error: err instanceof Error ? err.message : String(err) });
     return;
   }
 
@@ -53,8 +53,8 @@ export async function forceSummarize(userId: number): Promise<{ summarized: numb
     : [];
 
   const messages = buildSummarizeMessages(segmentA, summaryRow?.content);
-  console.log(`[Summarize] force chat ${userId}: ${segmentA.length} messages → summarize`);
-  console.log(`[Summarize] payload:\n${messages[0].content}`);
+  logger.info('Force summarizing messages', { user_id: userId, message_count: segmentA.length });
+  logger.debug('Summarize payload', { content: messages[0].content.slice(0, 500) });
 
   const newSummary = await askLLMShort(messages);
   logSummary(userId, newSummary);

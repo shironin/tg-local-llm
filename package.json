@@ -9,6 +9,7 @@
     "test": "jest"
   },
   "dependencies": {
+    "@sentry/node": "^10.52.0",
     "better-sqlite3": "^11.0.0",
     "dotenv": "^16.4.5",
     "node-telegram-bot-api": "^0.66.0"

@@ -1,4 +1,5 @@
 import { config } from '../../config';
+import { logger } from '../../logger';
 import { Message } from '../history';
 
 interface OllamaChatResponse {
@@ -8,7 +9,7 @@ interface OllamaChatResponse {
 const RETRY_DELAYS_MS = [3000, 8000];
 
 async function attemptLLM(history: Message[], timeoutMs: number, model = config.ollamaModel, label = 'LLM'): Promise<string> {
-  console.log(`[${label}] Using model: ${model}`);
+  logger.info('LLM request', { label, model });
   let response: Response;
 
   try {
@@ -55,7 +56,7 @@ async function callLLM(history: Message[], timeoutMs: number, model = config.oll
       lastError = err instanceof Error ? err : new Error(String(err));
       const delay = RETRY_DELAYS_MS[attempt];
       if (delay !== undefined) {
-        console.warn(`[LLM] Attempt ${attempt + 1} failed: ${lastError.message}. Retrying in ${delay / 1000}s...`);
+        logger.warn('LLM attempt failed, retrying', { label, attempt: attempt + 1, error: lastError.message, delay_s: delay / 1000 });
         await new Promise((r) => setTimeout(r, delay));
       }
     }

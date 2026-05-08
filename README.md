@@ -8,10 +8,10 @@ A Telegram bot running a local LLM (via Ollama) with an agentic tool-use loop. T
 
 ## Changelog
 
-![](.readme/unit-tests.png)
+Now we can view the events in Sentry!
 
-![](.readme/pipeline.png)
+![](.readme/sentry_events.png)
 
-## Info
+And can debug based on the trace ID!
 
-To execute unit tests, run: `npm run test`
+![](.readme/sentry_traceid.png)

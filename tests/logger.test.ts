@@ -1,99 +1,156 @@
-import { logHistory, logSummary } from '../src/logger';
+import { logger, runWithTrace, getTraceId, logHistory, logSummary } from '../src/logger';
 import type { Message } from '../src/modules/history';
 
-const CONTENT_COL = 72;
+function parseLastEntry(lines: string[]): Record<string, unknown> {
+  return JSON.parse(lines[lines.length - 1]);
+}
+
+describe('logger', () => {
+  let lines: string[];
+
+  beforeEach(() => {
+    lines = [];
+    jest.spyOn(console, 'log').mockImplementation((...args) => lines.push(args.join(' ')));
+  });
+
+  afterEach(() => jest.restoreAllMocks());
+
+  it('outputs valid JSON', () => {
+    logger.info('test');
+    expect(() => JSON.parse(lines[0])).not.toThrow();
+  });
+
+  it('includes all required fields', () => {
+    logger.info('hello');
+    const entry = parseLastEntry(lines);
+    expect(entry.timestamp).toBeDefined();
+    expect(entry.level).toBe('INFO');
+    expect(entry.service).toBe('tg-local-llm');
+    expect(entry.trace_id).toBeDefined();
+    expect(entry.message).toBe('hello');
+  });
+
+  it('logger.info emits level INFO', () => {
+    logger.info('msg');
+    expect(parseLastEntry(lines).level).toBe('INFO');
+  });
+
+  it('logger.warn emits level WARN', () => {
+    logger.warn('msg');
+    expect(parseLastEntry(lines).level).toBe('WARN');
+  });
+
+  it('logger.error emits level ERROR', () => {
+    logger.error('msg');
+    expect(parseLastEntry(lines).level).toBe('ERROR');
+  });
+
+  it('logger.debug emits level DEBUG', () => {
+    logger.debug('msg');
+    expect(parseLastEntry(lines).level).toBe('DEBUG');
+  });
+
+  it('merges extra context fields into the log entry', () => {
+    logger.info('ctx test', { user_id: 42, chat_id: 99 });
+    const entry = parseLastEntry(lines);
+    expect(entry.user_id).toBe(42);
+    expect(entry.chat_id).toBe(99);
+  });
+
+  it('uses "no-trace" when outside runWithTrace', () => {
+    logger.info('no trace');
+    expect(parseLastEntry(lines).trace_id).toBe('no-trace');
+  });
+
+  it('propagates trace_id inside runWithTrace', () => {
+    runWithTrace('abc-123', () => {
+      logger.info('traced');
+    });
+    expect(parseLastEntry(lines).trace_id).toBe('abc-123');
+  });
+
+  it('restores "no-trace" after runWithTrace exits', () => {
+    runWithTrace('inner', () => {});
+    logger.info('after');
+    expect(parseLastEntry(lines).trace_id).toBe('no-trace');
+  });
+});
+
+describe('getTraceId', () => {
+  it('returns "no-trace" outside any context', () => {
+    expect(getTraceId()).toBe('no-trace');
+  });
+
+  it('returns the active trace_id inside runWithTrace', () => {
+    runWithTrace('xyz-789', () => {
+      expect(getTraceId()).toBe('xyz-789');
+    });
+  });
+});
 
 describe('logHistory', () => {
   let lines: string[];
 
   beforeEach(() => {
     lines = [];
-    jest.spyOn(console, 'log').mockImplementation((...args) => {
-      lines.push(args.join(' '));
-    });
+    jest.spyOn(console, 'log').mockImplementation((...args) => lines.push(args.join(' ')));
   });
 
   afterEach(() => jest.restoreAllMocks());
 
-  it('prints a header line with user id, message count, and token estimate', () => {
-    const msgs: Message[] = [{ role: 'user', content: 'hello' }];
+  it('emits a DEBUG log', () => {
+    logHistory(1, [], 'test');
+    expect(parseLastEntry(lines).level).toBe('DEBUG');
+  });
+
+  it('includes user_id, label, message_count, estimated_tokens, and messages array', () => {
+    const msgs: Message[] = [{ role: 'user', content: '12345678' }];
     logHistory(42, msgs, 'before');
-    const header = lines.find((l) => l.includes('[Context]'))!;
-    expect(header).toContain('user 42');
-    expect(header).toContain('1 message');
-    expect(header).toContain('~2 tokens');
+    const entry = parseLastEntry(lines);
+    expect(entry.user_id).toBe(42);
+    expect(entry.label).toBe('before');
+    expect(entry.message_count).toBe(1);
+    expect(entry.estimated_tokens).toBe(2); // ceil(8/4)
+    expect(Array.isArray(entry.messages)).toBe(true);
   });
 
-  it('uses plural "messages" when count is not 1', () => {
-    const msgs: Message[] = [
-      { role: 'user', content: 'hi' },
-      { role: 'assistant', content: 'hello' },
-    ];
-    logHistory(1, msgs, 'test');
-    const header = lines.find((l) => l.includes('[Context]'))!;
-    expect(header).toContain('2 messages');
-  });
-
-  it('renders a row for each message with its role', () => {
-    const msgs: Message[] = [
-      { role: 'user', content: 'ping' },
-      { role: 'assistant', content: 'pong' },
-    ];
-    logHistory(1, msgs, 'test');
-    const rows = lines.filter((l) => /^\s+\d+\s│/.test(l));
-    expect(rows).toHaveLength(2);
-    expect(rows[0]).toContain('user');
-    expect(rows[1]).toContain('assistant');
-  });
-
-  it('appends [H] tag for history messages', () => {
+  it('marks history messages with [H] suffix on role', () => {
     const msgs: Message[] = [{ role: 'user', content: 'old', isHistory: true }];
     logHistory(1, msgs, 'test');
-    const row = lines.find((l) => /^\s+\d+\s│/.test(l))!;
-    expect(row).toContain('[H]');
+    const messages = parseLastEntry(lines).messages as Array<{ role: string }>;
+    expect(messages[0].role).toBe('user[H]');
   });
 
-  it('does not append [H] tag for non-history messages', () => {
-    const msgs: Message[] = [{ role: 'user', content: 'new' }];
+  it('does not add [H] suffix for non-history messages', () => {
+    const msgs: Message[] = [{ role: 'assistant', content: 'hi' }];
     logHistory(1, msgs, 'test');
-    const row = lines.find((l) => /^\s+\d+\s│/.test(l))!;
-    expect(row).not.toContain('[H]');
+    const messages = parseLastEntry(lines).messages as Array<{ role: string }>;
+    expect(messages[0].role).toBe('assistant');
   });
 
-  it('truncates content longer than CONTENT_COL characters', () => {
-    const long = 'a'.repeat(CONTENT_COL + 20);
-    const msgs: Message[] = [{ role: 'user', content: long }];
+  it('truncates content longer than 200 characters', () => {
+    const msgs: Message[] = [{ role: 'user', content: 'a'.repeat(300) }];
     logHistory(1, msgs, 'test');
-    const row = lines.find((l) => /^\s+\d+\s│/.test(l))!;
-    expect(row).toContain('…');
-    const contentPart = row.split('│')[2];
-    expect(contentPart.trim().length).toBeLessThanOrEqual(CONTENT_COL + 1); // +1 for the ellipsis char
+    const messages = parseLastEntry(lines).messages as Array<{ content: string }>;
+    expect(messages[0].content).toHaveLength(200); // 199 chars + '…'
+    expect(messages[0].content.endsWith('…')).toBe(true);
   });
 
-  it('collapses newlines in content into spaces', () => {
-    const msgs: Message[] = [{ role: 'user', content: 'line1\nline2\nline3' }];
+  it('does not truncate content within 200 characters', () => {
+    const msgs: Message[] = [{ role: 'user', content: 'short' }];
     logHistory(1, msgs, 'test');
-    const row = lines.find((l) => /^\s+\d+\s│/.test(l))!;
-    expect(row).not.toContain('\n');
-    expect(row).toContain('line1 line2 line3');
+    const messages = parseLastEntry(lines).messages as Array<{ content: string }>;
+    expect(messages[0].content).toBe('short');
   });
 
-  it('passes the label through to the header', () => {
-    logHistory(1, [], 'my-label');
-    const header = lines.find((l) => l.includes('[Context]'))!;
-    expect(header).toContain('my-label');
-  });
-
-  it('handles an empty history without throwing', () => {
+  it('handles empty history without throwing', () => {
     expect(() => logHistory(1, [], 'empty')).not.toThrow();
   });
 
   it('estimates tokens as ceil(total_chars / 4)', () => {
-    // 8 chars total → 2 tokens
-    const msgs: Message[] = [{ role: 'user', content: '12345678' }];
+    const msgs: Message[] = [{ role: 'user', content: '1234567890' }]; // 10 chars → ceil(10/4) = 3
     logHistory(1, msgs, 'test');
-    const header = lines.find((l) => l.includes('[Context]'))!;
-    expect(header).toContain('~2 tokens');
+    expect(parseLastEntry(lines).estimated_tokens).toBe(3);
   });
 });
 
@@ -102,40 +159,24 @@ describe('logSummary', () => {
 
   beforeEach(() => {
     lines = [];
-    jest.spyOn(console, 'log').mockImplementation((...args) => {
-      lines.push(args.join(' '));
-    });
+    jest.spyOn(console, 'log').mockImplementation((...args) => lines.push(args.join(' ')));
   });
 
   afterEach(() => jest.restoreAllMocks());
 
-  it('prints a header line with the user id', () => {
-    logSummary(7, 'some summary');
-    const header = lines.find((l) => l.includes('[Context]'))!;
-    expect(header).toContain('user 7');
+  it('emits a DEBUG log', () => {
+    logSummary(1, 'summary text');
+    expect(parseLastEntry(lines).level).toBe('DEBUG');
   });
 
-  it('prints each non-empty line of the summary indented', () => {
-    logSummary(1, 'line one\nline two\nline three');
-    const summaryLines = lines.filter((l) => l.startsWith('  '));
-    expect(summaryLines).toHaveLength(3);
-    expect(summaryLines[0]).toBe('  line one');
-    expect(summaryLines[1]).toBe('  line two');
-  });
-
-  it('ignores blank lines in the summary', () => {
-    logSummary(1, 'a\n\nb');
-    const summaryLines = lines.filter((l) => l.startsWith('  '));
-    expect(summaryLines).toHaveLength(2);
+  it('includes user_id and the full summary text', () => {
+    logSummary(7, 'my summary');
+    const entry = parseLastEntry(lines);
+    expect(entry.user_id).toBe(7);
+    expect(entry.summary).toBe('my summary');
   });
 
   it('handles an empty summary without throwing', () => {
     expect(() => logSummary(1, '')).not.toThrow();
-  });
-
-  it('prints two divider lines (one before summary, one after)', () => {
-    logSummary(1, 'x');
-    const dividers = lines.filter((l) => /^─+/.test(l.trim()));
-    expect(dividers).toHaveLength(2);
   });
 });

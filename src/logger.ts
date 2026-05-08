@@ -1,45 +1,84 @@
+import { AsyncLocalStorage } from 'async_hooks';
+import * as Sentry from '@sentry/node';
 import { Message } from './modules/history';
 
-const ROLE_COL  = 11; // width of the role column (incl. [H] tag)
-const CONTENT_COL = 72; // max content width before truncation
+type LogLevel = 'DEBUG' | 'INFO' | 'WARN' | 'ERROR';
 
-function truncate(text: string, max: number): string {
-  const single = text.replace(/\n+/g, ' ');
-  return single.length <= max ? single : single.slice(0, max - 1) + '…';
+// Sentry uses 'warning' where we use 'WARN', and 'log' doesn't map — use 'debug' as fallback
+const SENTRY_LEVEL: Record<LogLevel, Sentry.SeverityLevel> = {
+  DEBUG: 'debug',
+  INFO:  'info',
+  WARN:  'warning',
+  ERROR: 'error',
+};
+
+interface TraceStore {
+  traceId: string;
 }
 
-function pad(text: string, width: number): string {
-  return text.length >= width ? text : text + ' '.repeat(width - text.length);
+const storage = new AsyncLocalStorage<TraceStore>();
+
+function log(level: LogLevel, message: string, context: Record<string, unknown> = {}): void {
+  const traceId = storage.getStore()?.traceId ?? 'no-trace';
+  const entry = {
+    timestamp: new Date().toISOString(),
+    level,
+    service: 'tg-local-llm',
+    trace_id: traceId,
+    message,
+    ...context,
+  };
+  console.log(JSON.stringify(entry));
+  Sentry.addBreadcrumb({
+    level: SENTRY_LEVEL[level],
+    message,
+    data: { ...context, trace_id: traceId },
+    timestamp: Date.now() / 1000,
+  });
+  if (level === 'INFO' || level === 'WARN') {
+    Sentry.captureMessage(message, {
+      level: SENTRY_LEVEL[level],
+      extra: { ...context, trace_id: traceId },
+    });
+  }
 }
 
-const DIVIDER = `${'─'.repeat(4)}┼${'─'.repeat(ROLE_COL + 2)}┼${'─'.repeat(CONTENT_COL + 2)}`;
-const HEADER  = ` #  │ ${pad('role', ROLE_COL)} │ content`;
+export const logger = {
+  info:  (message: string, context?: Record<string, unknown>) => log('INFO',  message, context),
+  warn:  (message: string, context?: Record<string, unknown>) => log('WARN',  message, context),
+  error: (message: string, context?: Record<string, unknown>) => log('ERROR', message, context),
+  debug: (message: string, context?: Record<string, unknown>) => log('DEBUG', message, context),
+};
 
-// Rough approximation: ~4 characters per token (standard heuristic)
+export function runWithTrace<T>(traceId: string, fn: () => T): T {
+  return storage.run({ traceId }, fn);
+}
+
+export function getTraceId(): string {
+  return storage.getStore()?.traceId ?? 'no-trace';
+}
+
 function estimateTokens(messages: Message[]): number {
   return Math.ceil(messages.reduce((sum, m) => sum + m.content.length, 0) / 4);
 }
 
 export function logHistory(userId: number, history: Message[], label: string): void {
-  const tokens = estimateTokens(history);
-  const msgs = history.length;
-  console.log(`\n[Context] ${label} — user ${userId} (${msgs} message${msgs !== 1 ? 's' : ''}, ~${tokens} tokens)`);
-  console.log(HEADER);
-  console.log(DIVIDER);
-
-  history.forEach((msg, i) => {
-    const roleLabel = msg.isHistory ? `${msg.role} [H]` : msg.role;
-    const index = String(i + 1).padStart(2);
-    console.log(` ${index} │ ${pad(roleLabel, ROLE_COL)} │ ${truncate(msg.content, CONTENT_COL)}`);
+  logger.debug('Context snapshot', {
+    label,
+    user_id: userId,
+    message_count: history.length,
+    estimated_tokens: estimateTokens(history),
+    messages: history.map((m, i) => ({
+      index: i + 1,
+      role: m.isHistory ? `${m.role}[H]` : m.role,
+      content: m.content.length > 200 ? m.content.slice(0, 199) + '…' : m.content,
+    })),
   });
-
-  console.log('');
 }
 
 export function logSummary(userId: number, summary: string): void {
-  const lines = summary.split('\n').filter(Boolean);
-  console.log(`\n[Context] Summary produced for user ${userId}:`);
-  console.log(`${'─'.repeat(ROLE_COL + CONTENT_COL + 10)}`);
-  lines.forEach((line) => console.log(`  ${line}`));
-  console.log(`${'─'.repeat(ROLE_COL + CONTENT_COL + 10)}\n`);
+  logger.debug('Summary produced', {
+    user_id: userId,
+    summary,
+  });
 }
